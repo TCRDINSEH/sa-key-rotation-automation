@@ -6,8 +6,8 @@ steps:
   - |
     set -e
 
-    PROJECT_ID="${PROJECT_ID}"
-    SERVICE_ACCOUNTS="${SERVICE_ACCOUNTS}"
+    PROJECT_ID="applied-pager-476808-j5"
+    SERVICE_ACCOUNTS= "quickstart-service-account@applied-pager-476808-j5.iam.gserviceaccount.com"
     MAX_KEY_AGE_DAYS=45
 
     NOW_EPOCH=$(date +%s)
