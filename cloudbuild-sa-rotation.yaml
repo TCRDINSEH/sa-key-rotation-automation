@@ -1,0 +1,60 @@
+steps:
+- name: gcr.io/cloud-builders/gcloud
+  entrypoint: bash
+  args:
+  - -c
+  - |
+    set -e
+
+    PROJECT_ID="${PROJECT_ID}"
+    SERVICE_ACCOUNTS="${SERVICE_ACCOUNTS}"
+    MAX_KEY_AGE_DAYS=45
+
+    NOW_EPOCH=$(date +%s)
+
+    for SA in ${SERVICE_ACCOUNTS}; do
+      echo "🔄 Rotating key for $SA"
+
+      # ---------- Create new key ----------
+      KEY_FILE="/workspace/${SA##*@}-$(date +%Y%m%d).json"
+
+      gcloud iam service-accounts keys create "$KEY_FILE" \
+        --iam-account="$SA"
+
+      SECRET_NAME="$(echo $SA | tr '@.' '--')-key"
+
+      if ! gcloud secrets describe "$SECRET_NAME" >/dev/null 2>&1; then
+        gcloud secrets create "$SECRET_NAME" \
+          --replication-policy=automatic
+      fi
+
+      gcloud secrets versions add "$SECRET_NAME" \
+        --data-file="$KEY_FILE"
+
+      # ---------- Age-based cleanup ----------
+      echo "🧹 Cleaning keys older than ${MAX_KEY_AGE_DAYS} days"
+
+      gcloud iam service-accounts keys list \
+        --iam-account="$SA" \
+        --managed-by=user \
+        --format="csv[no-heading](name,validAfterTime)" | while IFS=',' read KEY_NAME CREATED_AT; do
+
+          CREATED_EPOCH=$(date -d "$CREATED_AT" +%s)
+          AGE_DAYS=$(( (NOW_EPOCH - CREATED_EPOCH) / 86400 ))
+
+          if [ "$AGE_DAYS" -gt "$MAX_KEY_AGE_DAYS" ]; then
+            echo "❌ Deleting key $KEY_NAME (age: ${AGE_DAYS} days)"
+            gcloud iam service-accounts keys delete "$KEY_NAME" \
+              --iam-account="$SA" \
+              --quiet
+          else
+            echo "✅ Keeping key $KEY_NAME (age: ${AGE_DAYS} days)"
+          fi
+      done
+
+      echo "✅ Rotation completed for $SA"
+    done
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1200s
